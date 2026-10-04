@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Invoices">
+<meta name="theme-color" content="#2f2f2f">
+<title>Invoice Maker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+:root{--bg:#f2f2f4;--card:#fff;--ink:#222;--muted:#6f6f78;--line:#e2e2e6;--accent:#2f2f2f;--onaccent:#fff;--field:#fff;--bar:rgba(255,255,255,.96);--danger:#c0392b;--ok:#1e8e3e;--badbg:#fdecea;--okbg:#e6f4ea}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#17171a;--card:#232328;--ink:#ececf0;--muted:#a0a0aa;--line:#38383f;--accent:#e9e9ee;--onaccent:#17171a;--field:#1c1c20;--bar:rgba(28,28,32,.96);--danger:#ff6b5e;--ok:#5fd17f;--badbg:#3a2220;--okbg:#1f3526;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#17171a;--card:#232328;--ink:#ececf0;--muted:#a0a0aa;--line:#38383f;--accent:#e9e9ee;--onaccent:#17171a;--field:#1c1c20;--bar:rgba(28,28,32,.96);--danger:#ff6b5e;--ok:#5fd17f;--badbg:#3a2220;--okbg:#1f3526;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:#2f2f2f;color:#fff;padding:10px 16px 0}
+header h1{font-size:18px;margin:0 0 8px;font-weight:600}
+nav{display:flex;gap:4px}
+nav button{flex:1;background:none;border:0;color:#bbb;padding:10px 0;font-size:15px;border-bottom:3px solid transparent}
+nav button.on{color:#fff;border-color:#fff}
+main{padding:16px 16px 120px;max-width:820px;margin:0 auto}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 10px}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+input,textarea,select{width:100%;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--ink);font-family:inherit}
+textarea{min-height:120px;resize:vertical}
+.row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+.item{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;position:relative}
+.item .del{position:absolute;top:6px;right:6px;width:auto;border:0;background:none;color:var(--danger);font-size:22px;line-height:1;padding:4px 8px}
+.item label:first-child{margin-top:0}
+.item .amt{text-align:right;font-weight:600;margin-top:8px}
+.btn{display:inline-block;border:0;border-radius:10px;padding:13px 16px;font-size:16px;font-weight:600;background:var(--accent);color:var(--onaccent);width:100%}
+.btn.ghost{background:var(--card);color:var(--accent);border:1px solid var(--accent)}
+.btn.small{padding:8px 12px;font-size:14px;width:auto}
+.btn.red{background:var(--danger);color:#fff}
+.totals{display:flex;justify-content:space-between;font-size:15px;padding:4px 0}
+.totals.big{font-weight:700;font-size:18px;border-top:1px solid var(--line);margin-top:6px;padding-top:10px}
+.actions{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--bar);border-top:1px solid var(--line);padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 10px);display:flex;gap:8px}
+.actions .btn{padding:12px 6px;font-size:15px}
+.hist{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.hist:last-child{border:0}
+.hist .info{flex:1;min-width:0}
+.hist .info b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist .info small{color:var(--muted)}
+.hist .tools{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.badge{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--badbg);color:var(--danger);font-weight:600;border:0}
+.badge.paid{background:var(--okbg);color:var(--ok)}
+.muted{color:var(--muted);font-size:13px}
+#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:20px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:9}
+#toast.on{opacity:1}
+#modal{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px}
+#modal[hidden]{display:none!important}
+#modal .mbox{background:var(--card);color:var(--ink);border-radius:14px;padding:18px;max-width:360px;width:100%}
+#modal p{margin:0 0 16px;font-size:16px;line-height:1.4}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #4a7bd0;outline-offset:2px}
+/* preview */
+#pvWrap{overflow:hidden;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.12);background:#fff}
+#pvScale{transform-origin:top left;width:794px}
+#sheet{width:794px;min-height:1120px;background:#fff;color:#333;padding:28px 50px 40px;font-family:Helvetica,Arial,sans-serif;font-size:13px}
+#sheet .top{display:flex;justify-content:space-between;align-items:flex-start}
+#sheet .from{font-weight:700;font-size:13px;margin-top:8px;white-space:pre-line}
+#sheet .ttl{text-align:right}
+#sheet .ttl h1{font-size:40px;font-weight:400;margin:0;color:#333;letter-spacing:.5px}
+#sheet .ttl .no{color:#777;font-size:16px;margin-top:4px}
+#sheet .mid{display:flex;justify-content:space-between;align-items:flex-end;margin-top:50px}
+#sheet .billto small{color:#777;font-size:13px}
+#sheet .billto div{font-weight:700;margin-top:8px;font-size:13px;white-space:pre-line}
+#sheet .meta{width:340px}
+#sheet .meta .r{display:flex;justify-content:space-between;padding:6px 14px}
+#sheet .meta .r span:first-child{color:#777;text-align:right;flex:1;padding-right:40px}
+#sheet .meta .bal{background:#f3f3f3;border-radius:4px;padding:10px 14px;font-weight:700;font-size:15px;margin-top:4px}
+#sheet .meta .bal span:first-child{color:#333}
+#sheet table{width:100%;border-collapse:collapse;margin-top:40px}
+#sheet thead th{background:#333;color:#fff;font-weight:400;padding:9px 14px;text-align:right;font-size:13px}
+#sheet thead th:first-child{text-align:left;border-radius:4px 0 0 4px}
+#sheet thead th:last-child{border-radius:0 4px 4px 0}
+#sheet thead th.q{text-align:center}
+#sheet tbody td{padding:9px 14px;text-align:right;vertical-align:top}
+#sheet tbody td:first-child{text-align:left;font-weight:700}
+#sheet tbody td.q{text-align:center}
+#sheet tbody tr{page-break-inside:avoid}
+#sheet .sum{margin:70px 0 0 auto;width:340px}
+#sheet .sum .r{display:flex;justify-content:space-between;padding:6px 14px}
+#sheet .sum .r span:first-child{color:#777;flex:1;text-align:right;padding-right:40px}
+#sheet .terms{margin-top:60px;page-break-inside:avoid}
+#sheet .terms small{color:#777;font-size:13px}
+#sheet .terms div{margin-top:8px;white-space:pre-line;line-height:1.5}
+</style>
+</head>
+<body>
+<header>
+  <h1>Invoice Maker</h1>
+  <nav>
+    <button data-tab="create" class="on">Create</button>
+    <button data-tab="preview">Preview</button>
+    <button data-tab="history">History</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+</header>
+
+<main>
+<!-- CREATE -->
+<section id="create" class="on">
+  <div class="card">
+    <h2>Invoice</h2>
+    <div class="row">
+      <div><label>Invoice #</label><input id="fNo" inputmode="numeric"></div>
+      <div><label>Tax %</label><input id="fTax" type="number" inputmode="decimal" step="any"></div>
+    </div>
+    <div class="row">
+      <div><label>Date</label><input id="fDate" type="date"></div>
+      <div><label>Due date</label><input id="fDue" type="date"></div>
+    </div>
+    <label>Bill to</label>
+    <input id="fBill" list="clientList" placeholder="Client name" autocomplete="off">
+    <datalist id="clientList"></datalist>
+  </div>
+
+  <div class="card">
+    <h2>Items</h2>
+    <div id="items"></div>
+    <button class="btn ghost" id="addItem">+ Add item</button>
+  </div>
+
+  <div class="card">
+    <div class="totals"><span>Subtotal</span><span id="tSub"></span></div>
+    <div class="totals"><span id="tTaxL">Tax</span><span id="tTax"></span></div>
+    <div class="totals big"><span>Total</span><span id="tTot"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>Terms / payment details</h2>
+    <textarea id="fTerms"></textarea>
+    <p class="muted">Defaults come from Settings. Edits here apply to this invoice only.</p>
+  </div>
+
+  <button class="btn ghost" id="newInv">Start a new blank invoice</button>
+</section>
+
+<!-- PREVIEW -->
+<section id="preview">
+  <div id="pvWrap"><div id="pvScale"><div id="sheet"></div></div></div>
+  <p class="muted" style="text-align:center">This is exactly how the PDF will look.</p>
+</section>
+
+<!-- HISTORY -->
+<section id="history">
+  <div class="card">
+    <h2>Saved invoices</h2>
+    <div id="histList"></div>
+  </div>
+</section>
+
+<!-- SETTINGS -->
+<section id="settings">
+  <div class="card">
+    <h2>Your details</h2>
+    <label>Your name / business (top-left of invoice)</label>
+    <textarea id="sName" style="min-height:60px"></textarea>
+    <div class="row">
+      <div><label>Currency</label><input id="sCur"></div>
+      <div><label>Default tax %</label><input id="sTax" type="number" inputmode="decimal" step="any"></div>
+    </div>
+    <div class="row">
+      <div><label>Next invoice #</label><input id="sNext" type="number" inputmode="numeric"></div>
+      <div><label>Default due (days)</label><input id="sDueDays" type="number" inputmode="numeric"></div>
+    </div>
+    <label>Default terms / bank details</label>
+    <textarea id="sTerms" style="min-height:170px"></textarea>
+    <button class="btn" id="saveSettings" style="margin-top:12px">Save settings</button>
+  </div>
+  <div class="card">
+    <h2>Backup</h2>
+    <p class="muted">Export a backup now and then, or to move your invoices to another device.</p>
+    <div class="row">
+      <button class="btn ghost" id="exportBtn">Export backup</button>
+      <button class="btn ghost" id="importBtn">Import backup</button>
+    </div>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+  </div>
+</section>
+</main>
+
+<div class="actions">
+  <button class="btn ghost" id="saveBtn">Save</button>
+  <button class="btn ghost" id="pdfBtn">Download PDF</button>
+  <button class="btn" id="shareBtn">Share</button>
+</div>
+<div id="toast"></div>
+<div id="modal" hidden><div class="mbox"><p id="mMsg"></p><div class="row"><button class="btn ghost" id="mNo">Cancel</button><button class="btn red" id="mYes">OK</button></div></div></div>
+
+<script>
+const KEY = 'invoice_maker_v1';
+const DEFAULT_TERMS = `Bank Name: Abu Dhabi Commercial Bank PJSC
+Account Title: FARSEEN ABDULLA
+Account Number: 13216441810001
+IBAN: AE220030013216441810001
+Currency: AED
+Branch: IBD - KHALDIYA TOWER BRANCH
+Swift Code: ADCBAEA`;
+
+function store(){ try { return JSON.parse(localStorage.getItem(KEY)) } catch(e){ return null } }
+function persist(){ try { localStorage.setItem(KEY, JSON.stringify(db)) } catch(e){} persistRemote(); }
+
+let db = store() || {
+  settings:{ name:'L Abdu Rahiman', currency:'AED', tax:0, next:2, dueDays:0, terms:DEFAULT_TERMS },
+  invoices:[], clients:['Bericht Audit and Advisory L.L.C']
+};
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const todayISO = () => { const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10) };
+const addDays = (iso,n) => { const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+Number(n||0)); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10) };
+const fmtDate = iso => iso ? new Date(iso+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '';
+const num = v => { const n=parseFloat(v); return isFinite(n)?n:0 };
+const money = n => `${db.settings.currency} ${num(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+
+function ask(msg,yes){ return new Promise(res=>{ const m=$('modal'); $('mMsg').textContent=msg; $('mYes').textContent=yes||'OK'; m.hidden=false;
+  const done=v=>{ m.hidden=true; $('mYes').onclick=$('mNo').onclick=null; res(v); }; $('mYes').onclick=()=>done(true); $('mNo').onclick=()=>done(false); }); }
+
+/* Inside Claude: save files through the viewer and keep data in your account. Elsewhere: plain browser download + local storage. */
+const caps={dl:null,store:null}; let chain=Promise.resolve();
+function persistRemote(){ if(!caps.store) return; const json=JSON.stringify(db); chain=chain.then(()=>caps.store.set({json,updated:Date.now()})).catch(()=>{}); }
+async function setupCaps(){
+  if(!(window.claude && window.claude.use)) return;
+  try{ caps.dl=await window.claude.use('downloads'); }catch(e){}
+  try{
+    const [d,u]=await Promise.all([window.claude.use('db'),window.claude.use('user')]);
+    if(!d||!u) return; const id=await u.id(); if(!id) return;
+    caps.store=d.collection('data/users/'+id).doc('invoices');
+    const snap=await caps.store.get();
+    const v=snap.exists?snap.data():null;
+    if(v && v.json){ db=JSON.parse(v.json); try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}; init(); }
+    else persistRemote();
+  }catch(e){}
+}
+async function saveFile(filename,data){
+  if(caps.dl){ try{ await caps.dl.save({filename,data}); toast('Saved '+filename); }
+    catch(e){ if(e&&e.code!=='declined') toast('Could not save: '+(e.message||e.code)); } return; }
+  const blob=data instanceof Blob?data:new Blob([data]);
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+}
+
+let cur;
+function blankInvoice(){
+  const s=db.settings, d=todayISO();
+  return { id:uid(), no:String(s.next), date:d, due:addDays(d,s.dueDays), billTo:'', tax:s.tax,
+           items:[{d:'',q:1,r:''}], terms:s.terms, paid:false, isNew:true };
+}
+function calc(inv){
+  const sub = inv.items.reduce((a,i)=>a+num(i.q)*num(i.r),0);
+  const tax = sub*num(inv.tax)/100;
+  return { sub, tax, tot:sub+tax };
+}
+
+/* ---------- form ---------- */
+function fillForm(){
+  $('fNo').value=cur.no; $('fTax').value=cur.tax; $('fDate').value=cur.date; $('fDue').value=cur.due;
+  $('fBill').value=cur.billTo; $('fTerms').value=cur.terms;
+  renderItems(); refresh();
+}
+function renderItems(){
+  $('items').innerHTML = cur.items.map((it,i)=>`
+    <div class="item">
+      ${cur.items.length>1?`<button class="del" data-del="${i}" aria-label="Remove">×</button>`:''}
+      <label>Description</label>
+      <input data-i="${i}" data-k="d" value="${esc(it.d)}" placeholder="e.g. ICV Referral (Company name)">
+      <div class="row">
+        <div><label>Qty</label><input data-i="${i}" data-k="q" type="number" inputmode="decimal" step="any" value="${esc(it.q)}"></div>
+        <div><label>Rate</label><input data-i="${i}" data-k="r" type="number" inputmode="decimal" step="any" value="${esc(it.r)}"></div>
+      </div>
+      <div class="amt" id="amt${i}">${money(num(it.q)*num(it.r))}</div>
+    </div>`).join('');
+}
+$('items').addEventListener('input',e=>{
+  const t=e.target; if(t.dataset.i===undefined) return;
+  const i=+t.dataset.i; cur.items[i][t.dataset.k]=t.value;
+  $('amt'+i).textContent=money(num(cur.items[i].q)*num(cur.items[i].r));
+  refresh();
+});
+$('items').addEventListener('click',e=>{
+  const d=e.target.dataset.del; if(d===undefined) return;
+  cur.items.splice(+d,1); renderItems(); refresh();
+});
+$('addItem').onclick=()=>{ cur.items.push({d:'',q:1,r:''}); renderItems(); refresh();
+  const ins=$('items').querySelectorAll('input[data-k="d"]'); ins[ins.length-1].focus(); };
+[['fNo','no'],['fTax','tax'],['fDate','date'],['fDue','due'],['fBill','billTo'],['fTerms','terms']].forEach(([id,k])=>{
+  $(id).addEventListener('input',()=>{ cur[k]=$(id).value; refresh(); });
+});
+$('newInv').onclick=async()=>{ if(await ask('Start a new blank invoice? Unsaved changes will be lost.','Start new')){ cur=blankInvoice(); fillForm(); window.scrollTo(0,0);} };
+
+function refresh(){
+  const c=calc(cur);
+  $('tSub').textContent=money(c.sub);
+  $('tTaxL').textContent=`Tax (${num(cur.tax)}%)`;
+  $('tTax').textContent=money(c.tax);
+  $('tTot').textContent=money(c.tot);
+  renderSheet();
+}
+
+/* ---------- invoice sheet ---------- */
+function renderSheet(){
+  const c=calc(cur);
+  const rows=cur.items.filter(i=>i.d||num(i.r)).map(i=>`
+    <tr><td>${esc(i.d)}</td><td class="q">${esc(num(i.q))}</td><td>${money(i.r)}</td><td>${money(num(i.q)*num(i.r))}</td></tr>`).join('');
+  $('sheet').innerHTML=`
+    <div class="top">
+      <div class="from">${esc(db.settings.name)}</div>
+      <div class="ttl"><h1>INVOICE</h1><div class="no"># ${esc(cur.no)}</div></div>
+    </div>
+    <div class="mid">
+      <div class="billto"><small>Bill To:</small><div>${esc(cur.billTo)}</div></div>
+      <div class="meta">
+        <div class="r"><span>Date:</span><span>${fmtDate(cur.date)}</span></div>
+        ${cur.due?`<div class="r"><span>Due Date:</span><span>${fmtDate(cur.due)}</span></div>`:''}
+        <div class="r bal"><span>Balance Due:</span><span>${money(cur.paid?0:c.tot)}</span></div>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>Item</th><th class="q">Quantity</th><th>Rate</th><th>Amount</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="sum">
+      <div class="r"><span>Subtotal:</span><span>${money(c.sub)}</span></div>
+      <div class="r"><span>Tax (${num(cur.tax)}%):</span><span>${money(c.tax)}</span></div>
+      <div class="r"><span>Total:</span><span>${money(c.tot)}</span></div>
+      ${cur.paid?`<div class="r"><span>Amount Paid:</span><span>${money(c.tot)}</span></div>`:''}
+    </div>
+    ${cur.terms?`<div class="terms"><small>Terms:</small><div>${esc(cur.terms)}</div></div>`:''}`;
+  fitPreview();
+}
+function fitPreview(){
+  const w=$('pvWrap').clientWidth||794, s=Math.min(1,w/794);
+  $('pvScale').style.transform=`scale(${s})`;
+  $('pvWrap').style.height=($('sheet').offsetHeight*s)+'px';
+}
+window.addEventListener('resize',fitPreview);
+
+/* ---------- save / pdf / share ---------- */
+function saveInvoice(silent){
+  if(!cur.billTo.trim()){ toast('Add a "Bill to" name first'); return false; }
+  const wasNew=cur.isNew; delete cur.isNew;
+  const copy=JSON.parse(JSON.stringify(cur)); copy.savedAt=Date.now();
+  const idx=db.invoices.findIndex(x=>x.id===cur.id);
+  if(idx>=0) db.invoices[idx]=copy; else db.invoices.unshift(copy);
+  const n=parseInt(cur.no,10);
+  if(wasNew && isFinite(n) && n>=db.settings.next) db.settings.next=n+1;
+  const b=cur.billTo.trim(); if(!db.clients.includes(b)) db.clients.push(b);
+  persist(); renderClients(); renderHistory();
+  if(!silent) toast('Invoice #'+cur.no+' saved');
+  return true;
+}
+function pdfOpts(){
+  const name=('Invoice-'+cur.no+'-'+(cur.billTo||'')).replace(/[^\w\-]+/g,'_').replace(/_+$/,'');
+  return { margin:0, filename:name+'.pdf', image:{type:'jpeg',quality:0.98},
+           html2canvas:{scale:2,useCORS:true,windowWidth:794}, jsPDF:{unit:'px',format:[794,1123],orientation:'portrait',hotfixes:['px_scaling']},
+           pagebreak:{mode:['css','legacy']} };
+}
+async function makePdfBlob(){ renderSheet(); return html2pdf().set(pdfOpts()).from($('sheet')).outputPdf('blob'); }
+
+$('saveBtn').onclick=()=>saveInvoice();
+$('pdfBtn').onclick=async()=>{
+  if(typeof html2pdf==='undefined'){ toast('PDF tool needs internet. Try again online.'); return; }
+  if(!saveInvoice(true)) return;
+  toast('Creating PDF…');
+  try{ const blob=await makePdfBlob(); await saveFile(pdfOpts().filename,blob); }catch(e){ toast('PDF failed: '+e.message); }
+};
+$('shareBtn').onclick=async()=>{
+  if(typeof html2pdf==='undefined'){ toast('PDF tool needs internet. Try again online.'); return; }
+  if(!saveInvoice(true)) return;
+  toast('Preparing…');
+  try{
+    const blob=await makePdfBlob();
+    const file=new File([blob],pdfOpts().filename,{type:'application/pdf'});
+    let shared=false;
+    if(!caps.dl && navigator.canShare && navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file],title:'Invoice #'+cur.no,text:`Invoice #${cur.no} – ${money(calc(cur).tot)}`}); shared=true; }
+      catch(err){ if(err.name==='AbortError') return; }
+    }
+    if(!shared) await saveFile(file.name,blob);
+  }catch(e){ if(e.name!=='AbortError') toast('Share failed: '+e.message); }
+};
+
+/* ---------- history ---------- */
+function renderHistory(){
+  const L=$('histList');
+  if(!db.invoices.length){ L.innerHTML='<p class="muted">No saved invoices yet.</p>'; return; }
+  const list=[...db.invoices].sort((a,b)=>(parseInt(b.no)||0)-(parseInt(a.no)||0));
+  L.innerHTML=list.map(inv=>`
+    <div class="hist">
+      <div class="info"><b>#${esc(inv.no)} · ${esc(inv.billTo)}</b>
+        <small>${fmtDate(inv.date)} · ${money(calc(inv).tot)}</small>
+        <div><button class="badge ${inv.paid?'paid':''}" data-paid="${inv.id}">${inv.paid?'PAID':'UNPAID'}</button></div></div>
+      <div class="tools">
+        <button class="btn small ghost" data-open="${inv.id}">Open</button>
+        <button class="btn small ghost" data-dup="${inv.id}">Copy</button>
+        <button class="btn small red" data-rm="${inv.id}">✕</button>
+      </div>
+    </div>`).join('');
+}
+$('histList').addEventListener('click',async e=>{
+  const t=e.target, ds=t.dataset, find=id=>db.invoices.find(x=>x.id===id);
+  if(ds.open){ cur=JSON.parse(JSON.stringify(find(ds.open))); fillForm(); show('create'); }
+  else if(ds.dup){ const src=find(ds.dup), d=todayISO();
+    cur={...JSON.parse(JSON.stringify(src)), id:uid(), no:String(db.settings.next), date:d, due:addDays(d,db.settings.dueDays), paid:false, isNew:true};
+    fillForm(); show('create'); toast('Copied as new invoice #'+cur.no); }
+  else if(ds.rm){ const inv=find(ds.rm); if(await ask(`Delete invoice #${inv.no} for ${inv.billTo}?`,'Delete')){ db.invoices=db.invoices.filter(x=>x.id!==ds.rm); persist(); renderHistory(); } }
+  else if(ds.paid){ const inv=find(ds.paid); inv.paid=!inv.paid; persist(); renderHistory(); if(cur.id===inv.id){cur.paid=inv.paid; renderSheet();} }
+});
+function renderClients(){ $('clientList').innerHTML=db.clients.map(c=>`<option value="${esc(c)}">`).join(''); }
+
+/* ---------- settings ---------- */
+function fillSettings(){ const s=db.settings; $('sName').value=s.name; $('sCur').value=s.currency; $('sTax').value=s.tax; $('sNext').value=s.next; $('sDueDays').value=s.dueDays; $('sTerms').value=s.terms; }
+$('saveSettings').onclick=()=>{
+  const s=db.settings; s.name=$('sName').value; s.currency=$('sCur').value||'AED'; s.tax=num($('sTax').value);
+  s.next=parseInt($('sNext').value,10)||1; s.dueDays=parseInt($('sDueDays').value,10)||0; s.terms=$('sTerms').value;
+  persist(); if(cur.isNew){ cur.no=String(s.next); cur.terms=s.terms; cur.tax=s.tax; cur.due=addDays(cur.date,s.dueDays); fillForm(); } else refresh();
+  toast('Settings saved');
+};
+$('exportBtn').onclick=()=>{
+  saveFile('invoices-backup-'+todayISO()+'.json',JSON.stringify(db,null,2));
+};
+$('importBtn').onclick=()=>$('importFile').click();
+$('importFile').onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{ const d=JSON.parse(await f.text()); if(!d.settings||!Array.isArray(d.invoices)) throw new Error('Not a backup file');
+    if(!(await ask('Replace all your saved invoices and settings with this backup?','Replace'))) return;
+    db=d; db.clients=db.clients||[]; persist(); init(); toast('Backup imported'); }
+  catch(err){ toast('Import failed: '+err.message); }
+  e.target.value='';
+};
+
+/* ---------- tabs / misc ---------- */
+function show(tab){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===tab));
+  if(tab==='preview') { renderSheet(); requestAnimationFrame(fitPreview); }
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>show(b.dataset.tab));
+let tt; function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('on'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('on'),2200); }
+
+function init(){ cur=blankInvoice(); fillSettings(); renderClients(); renderHistory(); fillForm(); }
+init();
+setupCaps();
+</script>
+</body>
+</html>
