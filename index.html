@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-title" content="Invoices">
 <meta name="theme-color" content="#2f2f2f">
 <title>Invoice Maker</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root{--bg:#f2f2f4;--card:#fff;--ink:#222;--muted:#6f6f78;--line:#e2e2e6;--accent:#2f2f2f;--onaccent:#fff;--field:#fff;--bar:rgba(255,255,255,.96);--danger:#c0392b;--ok:#1e8e3e;--badbg:#fdecea;--okbg:#e6f4ea}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#17171a;--card:#232328;--ink:#ececf0;--muted:#a0a0aa;--line:#38383f;--accent:#e9e9ee;--onaccent:#17171a;--field:#1c1c20;--bar:rgba(28,28,32,.96);--danger:#ff6b5e;--ok:#5fd17f;--badbg:#3a2220;--okbg:#1f3526;color-scheme:dark}}
@@ -105,6 +105,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 <section id="create" class="on">
   <div class="card">
     <h2>Invoice</h2>
+    <label for="fCo">From (your company)</label>
+    <select id="fCo"></select>
     <div class="row">
       <div><label>Invoice #</label><input id="fNo" inputmode="numeric"></div>
       <div><label>Tax %</label><input id="fTax" type="number" inputmode="decimal" step="any"></div>
@@ -156,8 +158,14 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 <!-- SETTINGS -->
 <section id="settings">
   <div class="card">
-    <h2>Your details</h2>
-    <label>Your name / business (top-left of invoice)</label>
+    <h2>Your companies</h2>
+    <label for="sCo">Company to edit</label>
+    <select id="sCo"></select>
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost small" id="addCo" style="width:100%">+ Add company</button>
+      <button class="btn ghost small" id="delCo" style="width:100%">Delete this company</button>
+    </div>
+    <label>Company name (top-left of invoice)</label>
     <textarea id="sName" style="min-height:60px"></textarea>
     <div class="row">
       <div><label>Currency</label><input id="sCur"></div>
@@ -169,7 +177,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     </div>
     <label>Default terms / bank details</label>
     <textarea id="sTerms" style="min-height:170px"></textarea>
-    <button class="btn" id="saveSettings" style="margin-top:12px">Save settings</button>
+    <button class="btn" id="saveSettings" style="margin-top:12px">Save company</button>
+    <p class="muted">Each company keeps its own bank details, currency and invoice numbering.</p>
   </div>
   <div class="card">
     <h2>Backup</h2>
@@ -205,9 +214,25 @@ function store(){ try { return JSON.parse(localStorage.getItem(KEY)) } catch(e){
 function persist(){ try { localStorage.setItem(KEY, JSON.stringify(db)) } catch(e){} persistRemote(); }
 
 let db = store() || {
-  settings:{ name:'L Abdu Rahiman', currency:'AED', tax:0, next:2, dueDays:0, terms:DEFAULT_TERMS },
-  invoices:[], clients:['Bericht Audit and Advisory L.L.C']
+  companies:[{ id:'c1', name:'L Abdu Rahiman', currency:'AED', tax:0, next:2, dueDays:0, terms:DEFAULT_TERMS }],
+  activeCo:'c1', invoices:[], clients:['Bericht Audit and Advisory L.L.C']
 };
+/* Upgrade older saved data (one company in "settings") to the company list. */
+function normalize(d){
+  if(!Array.isArray(d.companies)||!d.companies.length){
+    const s=d.settings||{}; d.companies=[{ id:'c1', name:s.name||'My company', currency:s.currency||'AED', tax:s.tax||0, next:s.next||1, dueDays:s.dueDays||0, terms:s.terms||'' }];
+  }
+  delete d.settings;
+  d.companies.forEach(c=>{ if(!c.id) c.id='c'+Math.random().toString(36).slice(2,8); });
+  if(!d.companies.some(c=>c.id===d.activeCo)) d.activeCo=d.companies[0].id;
+  d.invoices=Array.isArray(d.invoices)?d.invoices:[]; d.clients=Array.isArray(d.clients)?d.clients:[];
+  d.invoices.forEach(i=>{ if(!d.companies.some(c=>c.id===i.coId)) i.coId=d.companies[0].id; });
+  return d;
+}
+db=normalize(db);
+const coById = id => db.companies.find(c=>c.id===id) || db.companies[0];
+const activeCo = () => coById(db.activeCo);
+const coOf = inv => coById(inv && inv.coId);
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -215,7 +240,7 @@ const todayISO = () => { const d=new Date(); d.setMinutes(d.getMinutes()-d.getTi
 const addDays = (iso,n) => { const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+Number(n||0)); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10) };
 const fmtDate = iso => iso ? new Date(iso+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '';
 const num = v => { const n=parseFloat(v); return isFinite(n)?n:0 };
-const money = n => `${db.settings.currency} ${num(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+const money = (n,co) => `${(co||coOf(cur)).currency||'AED'} ${num(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 
 function ask(msg,yes){ return new Promise(res=>{ const m=$('modal'); $('mMsg').textContent=msg; $('mYes').textContent=yes||'OK'; m.hidden=false;
@@ -233,7 +258,7 @@ async function setupCaps(){
     caps.store=d.collection('data/users/'+id).doc('invoices');
     const snap=await caps.store.get();
     const v=snap.exists?snap.data():null;
-    if(v && v.json){ db=JSON.parse(v.json); try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}; init(); }
+    if(v && v.json){ db=normalize(JSON.parse(v.json)); try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}; init(); }
     else persistRemote();
   }catch(e){}
 }
@@ -246,8 +271,8 @@ async function saveFile(filename,data){
 
 let cur;
 function blankInvoice(){
-  const s=db.settings, d=todayISO();
-  return { id:uid(), no:String(s.next), date:d, due:addDays(d,s.dueDays), billTo:'', tax:s.tax,
+  const s=activeCo(), d=todayISO();
+  return { id:uid(), coId:s.id, no:String(s.next), date:d, due:addDays(d,s.dueDays), billTo:'', tax:s.tax,
            items:[{d:'',q:1,r:''}], terms:s.terms, paid:false, isNew:true };
 }
 function calc(inv){
@@ -258,6 +283,7 @@ function calc(inv){
 
 /* ---------- form ---------- */
 function fillForm(){
+  if($('fCo').options.length) $('fCo').value=coOf(cur).id;
   $('fNo').value=cur.no; $('fTax').value=cur.tax; $('fDate').value=cur.date; $('fDue').value=cur.due;
   $('fBill').value=cur.billTo; $('fTerms').value=cur.terms;
   renderItems(); refresh();
@@ -308,7 +334,7 @@ function renderSheet(){
     <tr><td>${esc(i.d)}</td><td class="q">${esc(num(i.q))}</td><td>${money(i.r)}</td><td>${money(num(i.q)*num(i.r))}</td></tr>`).join('');
   $('sheet').innerHTML=`
     <div class="top">
-      <div class="from">${esc(db.settings.name)}</div>
+      <div class="from">${esc(coOf(cur).name)}</div>
       <div class="ttl"><h1>INVOICE</h1><div class="no"># ${esc(cur.no)}</div></div>
     </div>
     <div class="mid">
@@ -347,7 +373,7 @@ function saveInvoice(silent){
   const idx=db.invoices.findIndex(x=>x.id===cur.id);
   if(idx>=0) db.invoices[idx]=copy; else db.invoices.unshift(copy);
   const n=parseInt(cur.no,10);
-  if(wasNew && isFinite(n) && n>=db.settings.next) db.settings.next=n+1;
+  const co=coOf(cur); if(wasNew && isFinite(n) && n>=co.next) co.next=n+1;
   const b=cur.billTo.trim(); if(!db.clients.includes(b)) db.clients.push(b);
   persist(); renderClients(); renderHistory();
   if(!silent) toast('Invoice #'+cur.no+' saved');
@@ -355,21 +381,89 @@ function saveInvoice(silent){
 }
 function pdfOpts(){
   const name=('Invoice-'+cur.no+'-'+(cur.billTo||'')).replace(/[^\w\-]+/g,'_').replace(/_+$/,'');
-  return { margin:0, filename:name+'.pdf', image:{type:'jpeg',quality:0.98},
-           html2canvas:{scale:2,useCORS:true,windowWidth:794}, jsPDF:{unit:'px',format:[794,1123],orientation:'portrait',hotfixes:['px_scaling']},
-           pagebreak:{mode:['css','legacy']} };
+  return { filename:name+'.pdf' };
 }
-async function makePdfBlob(){ renderSheet(); return html2pdf().set(pdfOpts()).from($('sheet')).outputPdf('blob'); }
+/*PDF-START*/
+function buildInvoicePdf(JsPDF, inv, S){
+  // A4 in points; layout mirrors the original invoice.
+  const doc=new JsPDF({unit:'pt',format:'a4'});
+  const W=595.28, H=841.89, L=50, R=545;
+  const cur=S.currency||'AED';
+  const n=v=>{const x=parseFloat(v);return isFinite(x)?x:0};
+  const money=v=>cur+' '+n(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fd=iso=>{ if(!iso) return ''; const d=new Date(iso+'T00:00:00'); return isNaN(d)?iso:d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); };
+  const sub=inv.items.reduce((a,i)=>a+n(i.q)*n(i.r),0), tax=sub*n(inv.tax)/100, tot=sub+tax;
+  const ink=()=>doc.setTextColor(51,51,51), grey=()=>doc.setTextColor(119,119,119);
+  const font=(st,sz)=>{doc.setFont('helvetica',st);doc.setFontSize(sz);};
+  const txt=(t,x,y,o)=>doc.text(String(t),x,y,o||{});
+
+  // Header: sender (left), INVOICE + number (right)
+  font('bold',10.5); ink();
+  doc.splitTextToSize(S.name||'',250).forEach((ln,i)=>txt(ln,L,52+i*14));
+  font('normal',32); ink(); txt('INVOICE',R,62,{align:'right'});
+  font('normal',13); grey(); txt('# '+inv.no,R,84,{align:'right'});
+
+  // Bill to (left)
+  font('normal',10); grey(); txt('Bill To:',L,172);
+  font('bold',10.5); ink();
+  doc.splitTextToSize(inv.billTo||'',240).forEach((ln,i)=>txt(ln,L,190+i*14));
+
+  // Dates + balance (right)
+  const LBL=400, VAL=535;
+  font('normal',10); grey(); txt('Date:',LBL,152,{align:'right'});
+  ink(); txt(fd(inv.date),VAL,152,{align:'right'});
+  if(inv.due){ grey(); txt('Due Date:',LBL,174,{align:'right'}); ink(); txt(fd(inv.due),VAL,174,{align:'right'}); }
+  doc.setFillColor(243,243,243); doc.roundedRect(312,186,R+5-312,30,3,3,'F');
+  font('bold',12); ink();
+  txt('Balance Due:',LBL,205,{align:'right'}); txt(money(inv.paid?0:tot),VAL,205,{align:'right'});
+
+  // Items table
+  const QX=370, RX=450, AX=535, DW=290;
+  const head=y=>{ doc.setFillColor(51,51,51); doc.roundedRect(45,y,R+5-45,24,3,3,'F');
+    font('normal',10); doc.setTextColor(255,255,255);
+    txt('Item',58,y+16); txt('Quantity',QX,y+16,{align:'center'}); txt('Rate',RX,y+16,{align:'right'}); txt('Amount',AX,y+16,{align:'right'});
+    return y+24; };
+  let y=head(250)+20;
+  inv.items.filter(i=>(i.d||'').trim()||n(i.r)).forEach(it=>{
+    font('bold',10);
+    const lines=doc.splitTextToSize(String(it.d||''),DW);
+    const h=lines.length*13;
+    if(y+h>H-60){ doc.addPage(); y=head(50)+20; font('bold',10); }
+    ink(); lines.forEach((ln,i)=>txt(ln,58,y+i*13));
+    font('normal',10);
+    txt(String(n(it.q)),QX,y,{align:'center'}); txt(money(it.r),RX,y,{align:'right'}); txt(money(n(it.q)*n(it.r)),AX,y,{align:'right'});
+    y+=h+12;
+  });
+
+  // Totals
+  y+=30; if(y+90>H-40){ doc.addPage(); y=60; }
+  const rows=[['Subtotal:',money(sub)],['Tax ('+n(inv.tax)+'%):',money(tax)],['Total:',money(tot)]];
+  if(inv.paid) rows.push(['Amount Paid:',money(tot)]);
+  font('normal',10);
+  rows.forEach(([a,b])=>{ grey(); txt(a,LBL,y,{align:'right'}); ink(); txt(b,VAL,y,{align:'right'}); y+=22; });
+
+  // Terms
+  if((inv.terms||'').trim()){
+    font('normal',10);
+    const tl=doc.splitTextToSize(inv.terms,R-L);
+    y+=30; if(y+20+tl.length*15>H-40){ doc.addPage(); y=60; }
+    grey(); txt('Terms:',L,y); y+=20; ink();
+    tl.forEach(ln=>{ if(y>H-40){ doc.addPage(); y=60; ink(); } txt(ln,L,y); y+=15; });
+  }
+  return doc;
+}
+/*PDF-END*/
+async function makePdfBlob(){ renderSheet(); return buildInvoicePdf(window.jspdf.jsPDF,cur,coOf(cur)).output('blob'); }
 
 $('saveBtn').onclick=()=>saveInvoice();
 $('pdfBtn').onclick=async()=>{
-  if(typeof html2pdf==='undefined'){ toast('PDF tool needs internet. Try again online.'); return; }
+  if(!(window.jspdf&&window.jspdf.jsPDF)){ toast('PDF tool needs internet. Try again online.'); return; }
   if(!saveInvoice(true)) return;
   toast('Creating PDF…');
   try{ const blob=await makePdfBlob(); await saveFile(pdfOpts().filename,blob); }catch(e){ toast('PDF failed: '+e.message); }
 };
 $('shareBtn').onclick=async()=>{
-  if(typeof html2pdf==='undefined'){ toast('PDF tool needs internet. Try again online.'); return; }
+  if(!(window.jspdf&&window.jspdf.jsPDF)){ toast('PDF tool needs internet. Try again online.'); return; }
   if(!saveInvoice(true)) return;
   toast('Preparing…');
   try{
@@ -392,7 +486,7 @@ function renderHistory(){
   L.innerHTML=list.map(inv=>`
     <div class="hist">
       <div class="info"><b>#${esc(inv.no)} · ${esc(inv.billTo)}</b>
-        <small>${fmtDate(inv.date)} · ${money(calc(inv).tot)}</small>
+        <small>${db.companies.length>1?esc(coOf(inv).name)+' · ':''}${fmtDate(inv.date)} · ${money(calc(inv).tot,coOf(inv))}</small>
         <div><button class="badge ${inv.paid?'paid':''}" data-paid="${inv.id}">${inv.paid?'PAID':'UNPAID'}</button></div></div>
       <div class="tools">
         <button class="btn small ghost" data-open="${inv.id}">Open</button>
@@ -405,7 +499,7 @@ $('histList').addEventListener('click',async e=>{
   const t=e.target, ds=t.dataset, find=id=>db.invoices.find(x=>x.id===id);
   if(ds.open){ cur=JSON.parse(JSON.stringify(find(ds.open))); fillForm(); show('create'); }
   else if(ds.dup){ const src=find(ds.dup), d=todayISO();
-    cur={...JSON.parse(JSON.stringify(src)), id:uid(), no:String(db.settings.next), date:d, due:addDays(d,db.settings.dueDays), paid:false, isNew:true};
+    const sc=coOf(src); cur={...JSON.parse(JSON.stringify(src)), id:uid(), coId:sc.id, no:String(sc.next), date:d, due:addDays(d,sc.dueDays), paid:false, isNew:true};
     fillForm(); show('create'); toast('Copied as new invoice #'+cur.no); }
   else if(ds.rm){ const inv=find(ds.rm); if(await ask(`Delete invoice #${inv.no} for ${inv.billTo}?`,'Delete')){ db.invoices=db.invoices.filter(x=>x.id!==ds.rm); persist(); renderHistory(); } }
   else if(ds.paid){ const inv=find(ds.paid); inv.paid=!inv.paid; persist(); renderHistory(); if(cur.id===inv.id){cur.paid=inv.paid; renderSheet();} }
@@ -413,12 +507,43 @@ $('histList').addEventListener('click',async e=>{
 function renderClients(){ $('clientList').innerHTML=db.clients.map(c=>`<option value="${esc(c)}">`).join(''); }
 
 /* ---------- settings ---------- */
-function fillSettings(){ const s=db.settings; $('sName').value=s.name; $('sCur').value=s.currency; $('sTax').value=s.tax; $('sNext').value=s.next; $('sDueDays').value=s.dueDays; $('sTerms').value=s.terms; }
+let editCo=null;
+function renderCoSelects(){
+  const opts=db.companies.map(c=>`<option value="${esc(c.id)}">${esc(c.name||'Unnamed company')}</option>`).join('');
+  $('fCo').innerHTML=opts; $('fCo').value=cur?coOf(cur).id:db.activeCo;
+  $('sCo').innerHTML=opts; $('sCo').value=coById(editCo||db.activeCo).id;
+  $('delCo').hidden=db.companies.length<2;
+}
+function fillSettings(){ const s=coById(editCo||db.activeCo); editCo=s.id; renderCoSelects(); $('sName').value=s.name; $('sCur').value=s.currency; $('sTax').value=s.tax; $('sNext').value=s.next; $('sDueDays').value=s.dueDays; $('sTerms').value=s.terms; }
 $('saveSettings').onclick=()=>{
-  const s=db.settings; s.name=$('sName').value; s.currency=$('sCur').value||'AED'; s.tax=num($('sTax').value);
+  const s=coById(editCo); s.name=$('sName').value.trim()||'Unnamed company'; s.currency=$('sCur').value||'AED'; s.tax=num($('sTax').value);
   s.next=parseInt($('sNext').value,10)||1; s.dueDays=parseInt($('sDueDays').value,10)||0; s.terms=$('sTerms').value;
-  persist(); if(cur.isNew){ cur.no=String(s.next); cur.terms=s.terms; cur.tax=s.tax; cur.due=addDays(cur.date,s.dueDays); fillForm(); } else refresh();
-  toast('Settings saved');
+  persist(); renderCoSelects(); renderHistory();
+  if(cur.isNew && cur.coId===s.id){ cur.no=String(s.next); cur.terms=s.terms; cur.tax=s.tax; cur.due=addDays(cur.date,s.dueDays); fillForm(); } else refresh();
+  toast(s.name+' saved');
+};
+$('sCo').onchange=()=>{ editCo=$('sCo').value; fillSettings(); };
+$('addCo').onclick=()=>{
+  const c={ id:uid(), name:'New company', currency:'AED', tax:0, next:1, dueDays:0, terms:'' };
+  db.companies.push(c); editCo=c.id; persist(); fillSettings(); $('sName').focus(); $('sName').select();
+  toast('Company added. Fill in its details and tap Save company');
+};
+$('delCo').onclick=async()=>{
+  if(db.companies.length<2) return;
+  const c=coById(editCo), used=db.invoices.filter(i=>i.coId===c.id).length;
+  const msg=used?`Delete ${c.name}? Its ${used} saved invoice(s) will move to ${db.companies.find(x=>x.id!==c.id).name}.`:`Delete ${c.name}?`;
+  if(!(await ask(msg,'Delete'))) return;
+  db.companies=db.companies.filter(x=>x.id!==c.id);
+  const fallback=db.companies[0].id;
+  db.invoices.forEach(i=>{ if(i.coId===c.id) i.coId=fallback; });
+  if(db.activeCo===c.id) db.activeCo=fallback;
+  if(cur.coId===c.id){ const f=coById(fallback); cur.coId=f.id; if(cur.isNew){ cur.no=String(f.next); cur.terms=f.terms; cur.tax=f.tax; cur.due=addDays(cur.date,f.dueDays); } }
+  editCo=db.activeCo; persist(); fillSettings(); renderHistory(); fillForm(); toast('Company deleted');
+};
+$('fCo').onchange=()=>{
+  const c=coById($('fCo').value); cur.coId=c.id; db.activeCo=c.id; persist();
+  if(cur.isNew){ cur.no=String(c.next); cur.terms=c.terms; cur.tax=c.tax; cur.due=addDays(cur.date,c.dueDays); }
+  fillForm(); toast('Invoice from '+c.name);
 };
 $('exportBtn').onclick=()=>{
   saveFile('invoices-backup-'+todayISO()+'.json',JSON.stringify(db,null,2));
@@ -426,9 +551,9 @@ $('exportBtn').onclick=()=>{
 $('importBtn').onclick=()=>$('importFile').click();
 $('importFile').onchange=async e=>{
   const f=e.target.files[0]; if(!f) return;
-  try{ const d=JSON.parse(await f.text()); if(!d.settings||!Array.isArray(d.invoices)) throw new Error('Not a backup file');
+  try{ const d=JSON.parse(await f.text()); if(!(d.settings||d.companies)||!Array.isArray(d.invoices)) throw new Error('Not a backup file');
     if(!(await ask('Replace all your saved invoices and settings with this backup?','Replace'))) return;
-    db=d; db.clients=db.clients||[]; persist(); init(); toast('Backup imported'); }
+    db=normalize(d); editCo=null; persist(); init(); toast('Backup imported'); }
   catch(err){ toast('Import failed: '+err.message); }
   e.target.value='';
 };
