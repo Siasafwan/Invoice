@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Invoices">
 <meta name="theme-color" content="#2f2f2f">
 <title>Invoice Maker</title>
@@ -453,29 +452,36 @@ function buildInvoicePdf(JsPDF, inv, S){
   return doc;
 }
 /*PDF-END*/
-async function makePdfBlob(){ renderSheet(); return buildInvoicePdf(window.jspdf.jsPDF,cur,coOf(cur)).output('blob'); }
 
 $('saveBtn').onclick=()=>saveInvoice();
-$('pdfBtn').onclick=async()=>{
-  if(!(window.jspdf&&window.jspdf.jsPDF)){ toast('PDF tool needs internet. Try again online.'); return; }
-  if(!saveInvoice(true)) return;
-  toast('Creating PDF…');
-  try{ const blob=await makePdfBlob(); await saveFile(pdfOpts().filename,blob); }catch(e){ toast('PDF failed: '+e.message); }
+/* PDF actions run without any waiting before the share sheet opens, because iPhone only allows it straight after a tap. */
+const isIOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function makePdfFile(){
+  if(!(window.jspdf&&window.jspdf.jsPDF)){ toast('PDF tool did not load. Check your internet and reopen the page.'); return null; }
+  if(!saveInvoice(true)) return null;
+  try{ renderSheet(); const blob=buildInvoicePdf(window.jspdf.jsPDF,cur,coOf(cur)).output('blob');
+       return new File([blob],pdfOpts().filename,{type:'application/pdf'}); }
+  catch(e){ toast('PDF failed: '+e.message); return null; }
+}
+function canShareFile(f){ try{ return !!(navigator.canShare&&navigator.canShare({files:[f]})); }catch(e){ return false; } }
+function openPdf(f){ const url=URL.createObjectURL(f); const w=window.open(url,'_blank'); if(!w) location.href=url; }
+function downloadPdf(f){ const a=document.createElement('a'); a.href=URL.createObjectURL(f); a.download=f.name; document.body.appendChild(a); a.click(); a.remove(); }
+function sharePdf(f){
+  // Share the file only: adding text makes WhatsApp and others send the text and drop the PDF.
+  navigator.share({files:[f]}).catch(e=>{ if(e.name!=='AbortError'){ toast('Opening the PDF instead'); openPdf(f); } });
+}
+$('pdfBtn').onclick=()=>{
+  const f=makePdfFile(); if(!f) return;
+  if(caps.dl){ saveFile(f.name,f); return; }
+  if(isIOS){ if(canShareFile(f)) sharePdf(f); else openPdf(f); toast('Tap "Save to Files" to keep the PDF'); return; }
+  downloadPdf(f); toast('PDF downloaded');
 };
-$('shareBtn').onclick=async()=>{
-  if(!(window.jspdf&&window.jspdf.jsPDF)){ toast('PDF tool needs internet. Try again online.'); return; }
-  if(!saveInvoice(true)) return;
-  toast('Preparing…');
-  try{
-    const blob=await makePdfBlob();
-    const file=new File([blob],pdfOpts().filename,{type:'application/pdf'});
-    let shared=false;
-    if(!caps.dl && navigator.canShare && navigator.canShare({files:[file]})){
-      try{ await navigator.share({files:[file],title:'Invoice #'+cur.no,text:`Invoice #${cur.no} – ${money(calc(cur).tot)}`}); shared=true; }
-      catch(err){ if(err.name==='AbortError') return; }
-    }
-    if(!shared) await saveFile(file.name,blob);
-  }catch(e){ if(e.name!=='AbortError') toast('Share failed: '+e.message); }
+$('shareBtn').onclick=()=>{
+  const f=makePdfFile(); if(!f) return;
+  if(caps.dl){ saveFile(f.name,f); return; }
+  if(canShareFile(f)) sharePdf(f);
+  else if(isIOS) openPdf(f);
+  else { downloadPdf(f); toast('Sharing not supported here, PDF downloaded instead'); }
 };
 
 /* ---------- history ---------- */
